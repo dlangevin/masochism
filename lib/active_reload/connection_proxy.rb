@@ -45,10 +45,9 @@ module ActiveReload
     end
 
     def self.setup_for(master, slave = nil)
-      slave ||= ActiveRecord::Base
-      slave.send :include, ActiveRecordConnectionMethods
-      ActiveRecord::Observer.send :include, ActiveReload::ObserverExtensions
-      slave.connection_proxy = new(master, slave)
+      ActiveRecord::Base.send :include, ActiveRecordConnectionMethods unless ActiveRecord::Base.included_modules.include?(ActiveRecordConnectionMethods)
+      ActiveRecord::Observer.send :include, ActiveReload::ObserverExtensions unless ActiveRecord::Observer.included_modules.include?(ActiveReload::ObserverExtensions)
+      ActiveRecord::Base.connection_proxy = new(master, slave || ActiveRecord::Base)
     end
 
     def with_master(to_slave = true)
@@ -60,14 +59,12 @@ module ActiveReload
 
     def set_to_master!
       unless @current == :master
-        @slave.logger.info "Switching to Master"
         @current = :master
       end
     end
 
     def set_to_slave!
       unless @current == :slave
-        @master.logger.info "Switching to Slave"
         @current = :slave
       end
     end
@@ -122,8 +119,9 @@ module ActiveReload
 
     # Send observed_method(object) if the method exists.
     def update_with_masterdb(observed_method, object) #:nodoc:
-      if object.class.connection.respond_to?(:with_master)
-        object.class.connection.with_master do
+      conn = object.respond_to?(:connection) ? object.connection : object.class.connection
+      if conn.respond_to?(:with_master)
+        conn.with_master do
           update_without_masterdb(observed_method, object)
         end
       else

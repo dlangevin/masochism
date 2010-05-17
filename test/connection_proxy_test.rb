@@ -6,63 +6,86 @@ require 'pp'
 module ActiveReload
   class ConnectionProxyTest < Test::Unit::TestCase
 
-    MASTER = 'db/masochism_master.sqlite3'
-    SLAVE = 'db/masochism_slave.sqlite3'
+    MASTER = '/tmp/db/masochism_master.sqlite3'
+    SLAVE = '/tmp/db/masochism_slave.sqlite3'
 
     def teardown
-      ActiveRecord::Base.remove_connection
-      FileUtils.rm_f(Rails.root + '/' + MASTER)
-      FileUtils.rm_f(Rails.root + '/' + SLAVE)
+        ActiveRecord::Base.remove_connection
+      FileUtils.rm_f(MASTER)
+      FileUtils.rm_f(SLAVE)
     end
 
     def test_slave_defined_returns_false_when_slave_not_defined
       ActiveRecord::Base.configurations = default_config
       assert_nil ActiveReload::ConnectionProxy.slave_defined?, 'Slave should not be defined'
     end
-
+    
     def test_slave_defined_returns_true_when_slave_defined
       ActiveRecord::Base.configurations = slave_inside_config
       assert_not_nil ActiveReload::ConnectionProxy.slave_defined?, 'Slave should be defined'
     end
-
+    
     def test_default
       ActiveRecord::Base.configurations = default_config
       reload
       ActiveReload::ConnectionProxy.setup!
-
+    
       ActiveRecord::Base.connection.master.execute('CREATE TABLE foo (id int)')
       assert_equal ['foo'], ActiveRecord::Base.connection.tables, 'Master and Slave should be the same database'
       assert_equal ['foo'], ActiveRecord::Base.connection.slave.tables, 'Master and Slave should be the same database'
     end
-
+    
     def test_master_database_outside_environment
       ActiveRecord::Base.configurations = master_outside_config
       reload
       ActiveReload::ConnectionProxy.setup!
-
+    
       ActiveRecord::Base.connection.master.execute('CREATE TABLE foo (id int)')
       assert_equal [], ActiveRecord::Base.connection.tables, 'Master and Slave should be different databases'
       assert_equal [], ActiveRecord::Base.connection.slave.tables, 'Master and Slave should be different databases'
     end
-
+    
     def test_master_database_within_environment
       ActiveRecord::Base.configurations = master_inside_config
       reload
       ActiveReload::ConnectionProxy.setup!
-
+    
       ActiveRecord::Base.connection.master.execute('CREATE TABLE foo (id int)')
       assert_equal [], ActiveRecord::Base.connection.tables, 'Master and Slave should be different databases'
       assert_equal [], ActiveRecord::Base.connection.slave.tables, 'Master and Slave should be different databases'
     end
-
+    
     def test_slave_database_within_environment
       ActiveRecord::Base.configurations = slave_inside_config
       reload
       ActiveReload::ConnectionProxy.setup!
-
+    
       ActiveRecord::Base.connection.master.execute('CREATE TABLE foo (id int)')
       assert_equal [], ActiveRecord::Base.connection.tables, 'Master and Slave should be different databases'
       assert_equal [], ActiveRecord::Base.connection.slave.tables, 'Master and Slave should be different databases'
+    
+    end
+    
+    def test_with_master_uses_master
+      ActiveRecord::Base.configurations = slave_inside_config
+      reload
+      ActiveReload::ConnectionProxy.setup!
+      
+      ActiveRecord::Base.connection.master.execute('CREATE TABLE foo (id int)')
+      ActiveRecord::Base.connection.with_master do
+        assert_equal ['foo'], ActiveRecord::Base.connection.tables, 'Should use the master db inside the with_master block'
+        assert_equal [], ActiveRecord::Base.connection.slave.tables, 'Master and Slave should be different databases'
+      end
+    end
+    
+    def test_delegates_methods_to_master
+      ActiveRecord::Base.configurations = slave_inside_config
+      reload
+      ActiveReload::ConnectionProxy.setup!
+      
+      ActiveRecord::Base.connection.execute('CREATE TABLE foo (id int)')
+      assert_equal ['foo'], ActiveRecord::Base.connection.master.tables, 'Master should be used for create table'
+      
     end
 
   private
@@ -85,16 +108,26 @@ module ActiveReload
 
     def master_inside_config
       {
-        Rails.env => {'adapter' => 'sqlite3', 'database' => SLAVE,
-          'master_database' => {'adapter' => 'sqlite3', 'database' => MASTER}
+        Rails.env => {
+          'adapter' => 'sqlite3', 
+          'database' => SLAVE,
+          'master_database' => {
+            'adapter' => 'sqlite3', 
+            'database' => MASTER
+          }
         }
       }
     end
 
     def slave_inside_config
       {
-        Rails.env => {'adapter' => 'sqlite3', 'database' => MASTER,
-          'slave_database' => {'adapter' => 'sqlite3', 'database' => SLAVE}
+        Rails.env => {
+          'adapter' => 'sqlite3', 
+          'database' => MASTER,
+          'slave_database' => {
+            'adapter' => 'sqlite3', 
+            'database' => SLAVE
+          }
         }
       }
     end
