@@ -10,7 +10,7 @@ module ActiveReload
     SLAVE = '/tmp/db/masochism_slave.sqlite3'
 
     def teardown
-        ActiveRecord::Base.remove_connection
+      ActiveRecord::Base.remove_connection
       FileUtils.rm_f(MASTER)
       FileUtils.rm_f(SLAVE)
     end
@@ -85,6 +85,22 @@ module ActiveReload
       
       ActiveRecord::Base.connection.execute('CREATE TABLE foo (id int)')
       assert_equal ['foo'], ActiveRecord::Base.connection.master.tables, 'Master should be used for create table'
+      
+    end
+    
+    def test_nested_with_master_really_uses_with_master
+      ActiveRecord::Base.configurations = slave_inside_config
+      reload
+      ActiveReload::ConnectionProxy.setup!
+      
+      conn = ActiveRecord::Base.connection
+      conn.with_master do
+        conn.with_master do
+          assert_equal conn.current, conn.master, "Connection should be master"
+        end
+        assert_equal conn.current, conn.master, "Connection should be master"
+      end
+      assert_equal conn.current, conn.slave, "Connection should be slave"
       
     end
 

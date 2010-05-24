@@ -51,10 +51,21 @@ module ActiveReload
     end
 
     def with_master(to_slave = true)
-      set_to_master!
-      yield
-    ensure
-      set_to_slave! if to_slave
+      # this can be nested, if we are already in a block (i.e) @user_master = true
+      # just call yield.  Otherwise, we can inadvertently use the slave
+      if @use_master
+        yield
+      # otherwise, if we do not have the @use_master flag set, we force the master
+      else
+        begin
+          @use_master = true
+          set_to_master!
+          yield
+        ensure
+          @use_master = false
+          set_to_slave! if to_slave
+        end
+      end
     end
 
     def set_to_master!
